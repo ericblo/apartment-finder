@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apartment Item Finder</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <h1>Where's my stuff?</h1>
+      <p class="subtitle">Search for an item to see where it was last seen.</p>
+    </header>
+
+    <form class="search-bar" id="search-form" autocomplete="off">
+      <input
+        type="text"
+        id="search-input"
+        placeholder="Search for an item… (e.g. passport, keys)"
+        list="item-suggestions"
+        aria-label="Search for an item"
+      >
+      <datalist id="item-suggestions"></datalist>
+      <button type="submit">Find it</button>
+    </form>
+
+    <div class="result" id="result" aria-live="polite"></div>
+
+    <div class="floor-plan" id="floor-plan">
+      <div class="room" data-room="Mateo Bedroom" style="grid-area: mateo;">
+        <span class="room-label">Mateo Bedroom</span>
+      </div>
+      <div class="room" data-room="Eric Bedroom" style="grid-area: eric;">
+        <span class="room-label">Eric Bedroom</span>
+      </div>
+      <div class="room" data-room="Kitchen" style="grid-area: kitchen;">
+        <span class="room-label">Kitchen</span>
+      </div>
+      <div class="room" data-room="Office" style="grid-area: office;">
+        <span class="room-label">Office</span>
+      </div>
+      <div class="room" data-room="Living Room" style="grid-area: living;">
+        <span class="room-label">Living Room</span>
+      </div>
+      <div class="room" data-room="Alex Room" style="grid-area: alex;">
+        <span class="room-label">Alex Room</span>
+      </div>
+      <div class="room" data-room="Gabe Room" style="grid-area: gabe;">
+        <span class="room-label">Gabe Room</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
