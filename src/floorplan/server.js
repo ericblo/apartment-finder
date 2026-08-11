@@ -6,7 +6,7 @@ const path = require("path");
 
 const PORT = process.env.PORT || 4173;
 const ROOT = path.join(__dirname, "..", "..");
-const DATA_FILE = path.join(__dirname, "floorplan_data.json");
+const DATA_FILE = path.join(__dirname, "rect_rooms.json");
 
 const MIME_TYPES = {
   ".html": "text/html",
@@ -69,9 +69,9 @@ function handleSaveFloorplan(req, res) {
       return;
     }
 
-    if (!parsed || !Array.isArray(parsed.building_outline) || !Array.isArray(parsed.rooms)) {
+    if (!parsed || !Array.isArray(parsed.rooms)) {
       res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Expected { building_outline, rooms }" }));
+      res.end(JSON.stringify({ error: "Expected { rooms }" }));
       return;
     }
 

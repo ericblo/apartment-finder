@@ -1,27 +1,66 @@
 const SVG_NS = "http://www.w3.org/2000/svg";
 const SCALE = 40; // px per meter
-const MARGIN = 40; // px padding around the plan
+const MARGIN = 60; // px padding around the plan
+const MIN_ROOM_DIM_M = 0.1;
 
-const ROOM_COLORS = {
-  room_1: "#f6c7a3",
-  room_3: "#b7dd9a",
-  room_4: "#f3b6d3",
-};
-const DEFAULT_PALETTE = ["#a9d1f0", "#e0c26f", "#c9b6f0", "#f0b6b6"];
+const PALETTE = ["#f6c7a3", "#b7dd9a", "#f3b6d3", "#a9d1f0", "#e0c26f", "#c9b6f0"];
+
+// Corner order: [bottom-left, top-left, top-right, bottom-right] in the room's own
+// (possibly rotated) local frame, where "width" runs along u and "height" along v.
+const CORNER_SIGNS = [
+  [-1, -1],
+  [-1, 1],
+  [1, 1],
+  [1, -1],
+];
+
+// Edge midpoints, in the same local frame. Each edge resizes exactly one dimension.
+const EDGE_DEFS = [
+  { varies: "width", su: -1, sv: 0 }, // left
+  { varies: "height", su: 0, sv: 1 }, // top
+  { varies: "width", su: 1, sv: 0 }, // right
+  { varies: "height", su: 0, sv: -1 }, // bottom
+];
 
 const svg = document.getElementById("floorplan-svg");
+const canvasWrap = document.getElementById("canvas-wrap");
 const editToggle = document.getElementById("edit-toggle");
 const statusEl = document.getElementById("status");
 
 let floorplanData = null;
 let transform = null;
 let editing = false;
-let dragState = null; // { roomIndex, vertexIndex, pointerId }
+let dragState = null;
 let statusClearTimer = null;
-let elements = { roomPolys: [], roomLabels: [], vertexHandles: [] };
+let elements = { roomPolys: [], roomLabels: [], cornerHandles: [], edgeHandles: [] };
 
-function computeTransform(data) {
-  const allPoints = [...data.building_outline, ...data.rooms.flatMap((r) => r.polygon)];
+function degToRad(deg) {
+  return (deg * Math.PI) / 180;
+}
+
+function roomAxes(room) {
+  const r = degToRad(room.angle_deg);
+  return { u: [Math.cos(r), Math.sin(r)], v: [-Math.sin(r), Math.cos(r)] };
+}
+
+function cornerPoint(room, i) {
+  const { u, v } = roomAxes(room);
+  const [su, sv] = CORNER_SIGNS[i];
+  const hw = room.width / 2;
+  const hh = room.height / 2;
+  return [room.center[0] + su * hw * u[0] + sv * hh * v[0], room.center[1] + su * hw * u[1] + sv * hh * v[1]];
+}
+
+function edgeMidPoint(room, edgeIndex) {
+  const { u, v } = roomAxes(room);
+  const def = EDGE_DEFS[edgeIndex];
+  const hw = room.width / 2;
+  const hh = room.height / 2;
+  return [room.center[0] + def.su * hw * u[0] + def.sv * hh * v[0], room.center[1] + def.su * hw * u[1] + def.sv * hh * v[1]];
+}
+
+function computeTransform(rooms) {
+  const allPoints = rooms.flatMap((room) => [0, 1, 2, 3].map((i) => cornerPoint(room, i)));
   const xs = allPoints.map((p) => p[0]);
   const ys = allPoints.map((p) => p[1]);
   const minX = Math.min(...xs);
@@ -46,33 +85,8 @@ function toDataPoint([sx, sy]) {
   return [(sx - MARGIN) / SCALE + transform.minX, transform.maxY - (sy - MARGIN) / SCALE];
 }
 
-function pointsAttr(polygon) {
-  return polygon.map((p) => toSvgPoint(p).join(",")).join(" ");
-}
-
-function polygonCentroid(polygon) {
-  let area = 0;
-  let cx = 0;
-  let cy = 0;
-  for (let i = 0; i < polygon.length; i++) {
-    const [x0, y0] = polygon[i];
-    const [x1, y1] = polygon[(i + 1) % polygon.length];
-    const cross = x0 * y1 - x1 * y0;
-    area += cross;
-    cx += (x0 + x1) * cross;
-    cy += (y0 + y1) * cross;
-  }
-  area *= 0.5;
-  if (Math.abs(area) < 1e-9) {
-    const n = polygon.length;
-    const sum = polygon.reduce((acc, [x, y]) => [acc[0] + x, acc[1] + y], [0, 0]);
-    return [sum[0] / n, sum[1] / n];
-  }
-  return [cx / (6 * area), cy / (6 * area)];
-}
-
-function roomColor(room, index) {
-  return ROOM_COLORS[room.id] || DEFAULT_PALETTE[index % DEFAULT_PALETTE.length];
+function pointsAttr(room) {
+  return [0, 1, 2, 3].map((i) => toSvgPoint(cornerPoint(room, i)).join(",")).join(" ");
 }
 
 function createSvgEl(tag, attrs) {
@@ -85,67 +99,98 @@ function createSvgEl(tag, attrs) {
 
 function render() {
   svg.innerHTML = "";
-  elements = { roomPolys: [], roomLabels: [], vertexHandles: [] };
+  elements = { roomPolys: [], roomLabels: [], cornerHandles: [], edgeHandles: [] };
 
   svg.setAttribute("viewBox", `0 0 ${transform.width} ${transform.height}`);
   svg.setAttribute("width", transform.width);
   svg.setAttribute("height", transform.height);
 
-  const outline = createSvgEl("polygon", {
-    class: "building-outline",
-    points: pointsAttr(floorplanData.building_outline),
-  });
-  svg.appendChild(outline);
-
   floorplanData.rooms.forEach((room, roomIndex) => {
     const fill = createSvgEl("polygon", {
       class: "room-fill",
-      points: pointsAttr(room.polygon),
-      fill: roomColor(room, roomIndex),
+      points: pointsAttr(room),
+      fill: PALETTE[roomIndex % PALETTE.length],
     });
     svg.appendChild(fill);
     elements.roomPolys[roomIndex] = fill;
 
-    const [cx, cy] = toSvgPoint(polygonCentroid(room.polygon));
-    const label = createSvgEl("text", { class: "room-label", x: cx, y: cy });
+    const [cx, cy] = toSvgPoint(room.center);
+    const label = createSvgEl("text", {
+      class: editing ? "room-label editable" : "room-label",
+      x: cx,
+      y: cy,
+      "data-room-index": roomIndex,
+    });
     label.textContent = room.name;
     svg.appendChild(label);
     elements.roomLabels[roomIndex] = label;
 
-    elements.vertexHandles[roomIndex] = [];
+    elements.cornerHandles[roomIndex] = [];
+    elements.edgeHandles[roomIndex] = [];
+
     if (editing) {
-      room.polygon.forEach((vertex, vertexIndex) => {
-        const [vx, vy] = toSvgPoint(vertex);
+      for (let i = 0; i < 4; i++) {
+        const [hx, hy] = toSvgPoint(cornerPoint(room, i));
         const handle = createSvgEl("circle", {
-          class: "vertex-handle",
-          cx: vx,
-          cy: vy,
+          class: "corner-handle",
+          cx: hx,
+          cy: hy,
           r: 6,
           "data-room-index": roomIndex,
-          "data-vertex-index": vertexIndex,
+          "data-corner-index": i,
         });
         svg.appendChild(handle);
-        elements.vertexHandles[roomIndex][vertexIndex] = handle;
-      });
+        elements.cornerHandles[roomIndex][i] = handle;
+      }
+
+      for (let i = 0; i < 4; i++) {
+        const [hx, hy] = toSvgPoint(edgeMidPoint(room, i));
+        const handle = createSvgEl("circle", {
+          class: "edge-handle",
+          cx: hx,
+          cy: hy,
+          r: 5,
+          "data-room-index": roomIndex,
+          "data-edge-index": i,
+        });
+        svg.appendChild(handle);
+        elements.edgeHandles[roomIndex][i] = handle;
+      }
     }
   });
 }
 
-function updateVertexVisual(roomIndex, vertexIndex) {
+function updateRoomVisual(roomIndex) {
   const room = floorplanData.rooms[roomIndex];
 
-  elements.roomPolys[roomIndex].setAttribute("points", pointsAttr(room.polygon));
+  elements.roomPolys[roomIndex].setAttribute("points", pointsAttr(room));
 
-  const [cx, cy] = toSvgPoint(polygonCentroid(room.polygon));
+  const [cx, cy] = toSvgPoint(room.center);
   elements.roomLabels[roomIndex].setAttribute("x", cx);
   elements.roomLabels[roomIndex].setAttribute("y", cy);
 
-  const handle = elements.vertexHandles[roomIndex][vertexIndex];
-  if (handle) {
-    const [vx, vy] = toSvgPoint(room.polygon[vertexIndex]);
-    handle.setAttribute("cx", vx);
-    handle.setAttribute("cy", vy);
+  for (let i = 0; i < 4; i++) {
+    const [hx, hy] = toSvgPoint(cornerPoint(room, i));
+    const handle = elements.cornerHandles[roomIndex][i];
+    if (handle) {
+      handle.setAttribute("cx", hx);
+      handle.setAttribute("cy", hy);
+    }
   }
+
+  for (let i = 0; i < 4; i++) {
+    const [hx, hy] = toSvgPoint(edgeMidPoint(room, i));
+    const handle = elements.edgeHandles[roomIndex][i];
+    if (handle) {
+      handle.setAttribute("cx", hx);
+      handle.setAttribute("cy", hy);
+    }
+  }
+}
+
+function finalizeRoomGeometry(room) {
+  room.corners = [0, 1, 2, 3].map((i) => cornerPoint(room, i));
+  room.area_m2 = Math.round(room.width * room.height * 1000) / 1000;
 }
 
 function setStatus(kind) {
@@ -187,17 +232,138 @@ function saveFloorplan() {
     });
 }
 
+function startCornerDrag(roomIndex, cornerIndex, pointerId) {
+  const room = floorplanData.rooms[roomIndex];
+  const fixedIndex = (cornerIndex + 2) % 4;
+  dragState = {
+    type: "corner",
+    roomIndex,
+    index: cornerIndex,
+    fixedPoint: cornerPoint(room, fixedIndex),
+    axes: roomAxes(room),
+    pointerId,
+  };
+}
+
+function startEdgeDrag(roomIndex, edgeIndex, pointerId) {
+  const room = floorplanData.rooms[roomIndex];
+  const fixedIndex = (edgeIndex + 2) % 4;
+  dragState = {
+    type: "edge",
+    roomIndex,
+    index: edgeIndex,
+    varies: EDGE_DEFS[edgeIndex].varies,
+    fixedPoint: edgeMidPoint(room, fixedIndex),
+    axes: roomAxes(room),
+    pointerId,
+  };
+}
+
+function applyDrag(dataPoint) {
+  const room = floorplanData.rooms[dragState.roomIndex];
+  const { u, v } = dragState.axes;
+  const fp = dragState.fixedPoint;
+  const d = [dataPoint[0] - fp[0], dataPoint[1] - fp[1]];
+  const alongU = d[0] * u[0] + d[1] * u[1];
+  const alongV = d[0] * v[0] + d[1] * v[1];
+
+  if (dragState.type === "corner") {
+    room.width = Math.max(MIN_ROOM_DIM_M, Math.abs(alongU));
+    room.height = Math.max(MIN_ROOM_DIM_M, Math.abs(alongV));
+    room.center = [(fp[0] + dataPoint[0]) / 2, (fp[1] + dataPoint[1]) / 2];
+  } else if (dragState.varies === "width") {
+    room.width = Math.max(MIN_ROOM_DIM_M, Math.abs(alongU));
+    room.center = [fp[0] + (alongU / 2) * u[0], fp[1] + (alongU / 2) * u[1]];
+  } else {
+    room.height = Math.max(MIN_ROOM_DIM_M, Math.abs(alongV));
+    room.center = [fp[0] + (alongV / 2) * v[0], fp[1] + (alongV / 2) * v[1]];
+  }
+
+  updateRoomVisual(dragState.roomIndex);
+}
+
+function startRename(roomIndex, labelEl) {
+  const room = floorplanData.rooms[roomIndex];
+  const svgRect = svg.getBoundingClientRect();
+  const wrapRect = canvasWrap.getBoundingClientRect();
+  const scaleX = svgRect.width / transform.width;
+  const scaleY = svgRect.height / transform.height;
+  const bbox = labelEl.getBBox();
+
+  const screenX = svgRect.left - wrapRect.left + canvasWrap.scrollLeft + bbox.x * scaleX;
+  const screenY = svgRect.top - wrapRect.top + canvasWrap.scrollTop + bbox.y * scaleY;
+  const screenW = Math.max(bbox.width * scaleX, 60);
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "rename-input";
+  input.value = room.name;
+  input.style.left = `${screenX - 10}px`;
+  input.style.top = `${screenY - 3}px`;
+  input.style.width = `${screenW + 20}px`;
+  canvasWrap.appendChild(input);
+  input.focus();
+  input.select();
+
+  let done = false;
+  function commit() {
+    if (done) return;
+    done = true;
+    const newName = input.value.trim();
+    if (newName) {
+      room.name = newName;
+      elements.roomLabels[roomIndex].textContent = newName;
+    }
+    cleanup();
+    saveFloorplan();
+  }
+  function cancel() {
+    if (done) return;
+    done = true;
+    cleanup();
+  }
+  function cleanup() {
+    input.removeEventListener("blur", commit);
+    input.removeEventListener("keydown", onKeydown);
+    input.remove();
+  }
+  function onKeydown(event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commit();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      cancel();
+    }
+  }
+  input.addEventListener("blur", commit);
+  input.addEventListener("keydown", onKeydown);
+}
+
 svg.addEventListener("pointerdown", (event) => {
   if (!editing) return;
   const target = event.target;
-  if (!target.classList || !target.classList.contains("vertex-handle")) return;
+  if (!target.classList) return;
 
-  event.preventDefault();
-  const roomIndex = Number(target.getAttribute("data-room-index"));
-  const vertexIndex = Number(target.getAttribute("data-vertex-index"));
-  dragState = { roomIndex, vertexIndex, pointerId: event.pointerId };
-  target.classList.add("dragging");
-  svg.setPointerCapture(event.pointerId);
+  if (target.classList.contains("corner-handle")) {
+    event.preventDefault();
+    const roomIndex = Number(target.getAttribute("data-room-index"));
+    const cornerIndex = Number(target.getAttribute("data-corner-index"));
+    startCornerDrag(roomIndex, cornerIndex, event.pointerId);
+    target.classList.add("dragging");
+    svg.setPointerCapture(event.pointerId);
+  } else if (target.classList.contains("edge-handle")) {
+    event.preventDefault();
+    const roomIndex = Number(target.getAttribute("data-room-index"));
+    const edgeIndex = Number(target.getAttribute("data-edge-index"));
+    startEdgeDrag(roomIndex, edgeIndex, event.pointerId);
+    target.classList.add("dragging");
+    svg.setPointerCapture(event.pointerId);
+  } else if (target.classList.contains("room-label")) {
+    event.preventDefault();
+    const roomIndex = Number(target.getAttribute("data-room-index"));
+    startRename(roomIndex, target);
+  }
 });
 
 window.addEventListener("pointermove", (event) => {
@@ -209,15 +375,17 @@ window.addEventListener("pointermove", (event) => {
   const sx = (event.clientX - svgRect.left) * scaleX;
   const sy = (event.clientY - svgRect.top) * scaleY;
 
-  const room = floorplanData.rooms[dragState.roomIndex];
-  room.polygon[dragState.vertexIndex] = toDataPoint([sx, sy]);
-  updateVertexVisual(dragState.roomIndex, dragState.vertexIndex);
+  applyDrag(toDataPoint([sx, sy]));
 });
 
 window.addEventListener("pointerup", (event) => {
   if (!dragState || event.pointerId !== dragState.pointerId) return;
 
-  const handle = elements.vertexHandles[dragState.roomIndex][dragState.vertexIndex];
+  const room = floorplanData.rooms[dragState.roomIndex];
+  finalizeRoomGeometry(room);
+
+  const handleList = dragState.type === "corner" ? elements.cornerHandles : elements.edgeHandles;
+  const handle = handleList[dragState.roomIndex][dragState.index];
   if (handle) handle.classList.remove("dragging");
   if (svg.hasPointerCapture(event.pointerId)) {
     svg.releasePointerCapture(event.pointerId);
@@ -241,7 +409,7 @@ fetch("/api/floorplan")
   })
   .then((data) => {
     floorplanData = data;
-    transform = computeTransform(data);
+    transform = computeTransform(data.rooms);
     render();
   })
   .catch((err) => {

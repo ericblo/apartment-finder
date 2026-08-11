@@ -111,6 +111,7 @@ body {
 }
 
 .canvas-wrap {
+  position: relative;
   background: var(--panel);
   border-radius: var(--radius);
   padding: 16px;
@@ -125,13 +126,6 @@ body {
   height: auto;
 }
 
-.building-outline {
-  fill: none;
-  stroke: var(--outline);
-  stroke-width: 3;
-  stroke-linejoin: round;
-}
-
 .room-fill {
   stroke: #333;
   stroke-width: 2;
@@ -144,25 +138,62 @@ body {
   font-weight: 700;
   fill: #2a2a2a;
   text-anchor: middle;
-  pointer-events: none;
   paint-order: stroke;
   stroke: #fff;
   stroke-width: 3px;
   stroke-linejoin: round;
 }
 
-.vertex-handle {
+.room-label.editable {
+  cursor: text;
+  pointer-events: auto;
+}
+
+.room-label:not(.editable) {
+  pointer-events: none;
+}
+
+.corner-handle {
   fill: #fff;
   stroke: var(--accent);
   stroke-width: 2;
-  cursor: grab;
+  cursor: nwse-resize;
 }
 
-.vertex-handle:hover {
+.corner-handle:hover {
   fill: var(--accent);
 }
 
-.vertex-handle.dragging {
+.corner-handle.dragging {
   cursor: grabbing;
   fill: var(--accent);
+}
+
+.edge-handle {
+  fill: #fff;
+  stroke: var(--accent);
+  stroke-width: 2;
+  opacity: 0.85;
+  cursor: crosshair;
+}
+
+.edge-handle:hover {
+  fill: var(--accent);
+}
+
+.edge-handle.dragging {
+  cursor: grabbing;
+  fill: var(--accent);
+}
+
+.rename-input {
+  position: absolute;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  padding: 2px 4px;
+  z-index: 10;
 }
