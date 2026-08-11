@@ -36,17 +36,30 @@ The script will:
 
 ## Floor Plan Editor
 
-`src/floorplan/` holds the apartment's floor plan as room rectangles (`rect_rooms.json`, in meters) plus a small editor for resizing them.
+`src/floorplan/` holds the apartment's floor plan as room rectangles (`rect_rooms.json`, in meters) plus a small editor for editing them.
+
+Rooms are always axis-aligned — stored as `{ min: [x, y], max: [x, y] }`, never an arbitrary rotation or 4 free-form points. This is enforced automatically wherever rooms are created, both by the extraction pipeline and by every edit in the browser editor.
 
 ```
 npm run floorplan
 ```
 
-Then open http://localhost:4173/. Click "Enable editing" to drag a room's corner or edge handles (resize only, preserves rectangularity — width/height/rotation, not free-form quads) or click a label to rename a room. Each edit saves automatically to `src/floorplan/rect_rooms.json` via a small local Node server (`src/floorplan/server.js`). This only works when running the server locally — the static GitHub Pages deployment has no backend to persist edits.
+Then open http://localhost:4173/. Click "Enable editing" to:
+- **Drag inside a room** to move the whole rectangle (translation only, edges stay axis-aligned).
+- **Drag a corner or edge handle** to resize that room (adjusts one or two coordinates directly — never a rotation).
+- **Click a label** to rename a room.
+
+Each edit saves automatically to `src/floorplan/rect_rooms.json` via a small local Node server (`src/floorplan/server.js`). This only works when running the server locally — the static GitHub Pages deployment has no backend to persist edits.
 
 This server also serves the item finder (`index.html`) from the same origin, so `npm run floorplan` is the easiest way to run the whole app locally — both pages link to each other ("Edit floor plan" / "Item Finder").
 
-Known limitation, not auto-fixed: rooms connected by an open doorway in the raw scan merge into a single rectangle (currently `room_1`, spanning the living room and an adjacent room). Splitting a merged rectangle into two isn't built yet — resize/rename only for now.
+**"Clean up layout"** is a separate, manual, on-demand button (never runs automatically) that does two things in sequence:
+1. Rotates the whole layout so the largest room's longest edge is vertical.
+2. Snaps any two rooms' edges that are within ~0.18m of touching to align exactly (averages the coordinate), so adjacent walls read as flush.
+
+Dragging never snaps on its own — if edges drift apart after moving rooms around, re-run "Clean up layout."
+
+Known limitation, not auto-fixed: rooms connected by an open doorway in the raw scan merge into a single rectangle (currently `room_1`, spanning the living room and an adjacent room). Splitting a merged rectangle into two isn't built yet.
 
 `src/floorplan/floorplan_data.json` (the old polygon-based floor plan) is no longer read by the app — kept only as a reference/backup.
 
@@ -59,4 +72,4 @@ pip install -r pipeline/requirements.txt
 python3 pipeline/extract_rect_rooms.py
 ```
 
-It projects the mesh onto the floor plane within a wall-height band, finds the building envelope, and fits a rectangle (`cv2.minAreaRect`) to each enclosed free-space blob. This favors "a reasonable rectangle per room" over pixel-perfect walls — re-running it overwrites any manual edits made in the browser editor, so re-extract before you start editing, not after.
+It projects the mesh onto the floor plane within a wall-height band, finds the building envelope, and fits a rectangle (`cv2.minAreaRect`) to each enclosed free-space blob — then rotates the whole layout so the largest room's longest edge is vertical and takes each room's axis-aligned bounding box in that frame (the same "rotate to vertical" logic as the editor's cleanup button, applied once at extraction time since axis-alignment is mandatory for the stored data). This favors "a reasonable rectangle per room" over pixel-perfect walls — re-running it overwrites any manual edits made in the browser editor, so re-extract before you start editing, not after.

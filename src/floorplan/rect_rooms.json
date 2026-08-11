@@ -1,128 +1,56 @@
 {
   "coordinate_frame": {
     "unit": "meters",
-    "note": "x = mesh X axis, y = mesh Z axis (floor-plan plane). Not tied to compass orientation. Rectangles are approximate (furniture and open doorways can shrink/merge blobs) -- fix up by hand in the floor plan editor."
+    "note": "Rotated so the largest room's longest edge is vertical; not tied to compass orientation. Rooms are axis-aligned rectangles (min, max corners) -- always, never an arbitrary rotation. Rectangles are approximate (furniture and open doorways can shrink/merge blobs) -- fix up by hand in the floor plan editor."
   },
   "rooms": [
     {
-      "corners": [
-        [
-          1.0751724243164062,
-          6.475424766540527
-        ],
-        [
-          -5.530904769897461,
-          3.266758918762207
-        ],
-        [
-          0.20261001586914062,
-          -8.537534713745117
-        ],
-        [
-          6.808685302734375,
-          -5.3288679122924805
-        ]
-      ],
-      "center": [
-        0.6388910675048827,
-        -1.0310547256469729
-      ],
-      "width": 13.1231,
-      "height": 7.3441,
-      "angle_deg": -64.0935,
-      "area_m2": 38.478,
       "id": "room_1",
-      "name": "Room 1"
+      "name": "Room 1",
+      "min": [
+        -3.9894,
+        -7.5366
+      ],
+      "max": [
+        3.3547,
+        5.5865
+      ]
     },
     {
-      "corners": [
-        [
-          -0.5079879760742188,
-          10.041886329650879
-        ],
-        [
-          -3.3227596282958984,
-          9.130629539489746
-        ],
-        [
-          -1.679856777191162,
-          4.055886268615723
-        ],
-        [
-          1.1349153518676758,
-          4.9671430587768555
-        ]
-      ],
-      "center": [
-        -1.0939220428466792,
-        7.0488866806030295
-      ],
-      "width": 5.3341,
-      "height": 2.9586,
-      "angle_deg": -72.0611,
-      "area_m2": 7.664,
       "id": "room_2",
-      "name": "Room 2"
+      "name": "Room 2",
+      "min": [
+        -0.1805,
+        4.2037
+      ],
+      "max": [
+        3.4889,
+        9.8963
+      ]
     },
     {
-      "corners": [
-        [
-          7.047860145568848,
-          -5.4294257164001465
-        ],
-        [
-          4.5578460693359375,
-          -6.430086135864258
-        ],
-        [
-          6.075812339782715,
-          -10.207352638244629
-        ],
-        [
-          8.565826416015625,
-          -9.20669174194336
-        ]
-      ],
-      "center": [
-        6.561836624145508,
-        -7.818389015197754
-      ],
-      "width": 4.0709,
-      "height": 2.6836,
-      "angle_deg": -68.1063,
-      "area_m2": 5.016,
       "id": "room_3",
-      "name": "Room 3"
+      "name": "Room 3",
+      "min": [
+        0.5641,
+        -11.7924
+      ],
+      "max": [
+        3.526,
+        -7.5437
+      ]
     },
     {
-      "corners": [
-        [
-          -4.990255355834961,
-          8.530709266662598
-        ],
-        [
-          -7.06980037689209,
-          7.3329973220825195
-        ],
-        [
-          -4.962881565093994,
-          3.674830436706543
-        ],
-        [
-          -2.883336067199707,
-          4.872542381286621
-        ]
-      ],
-      "center": [
-        -4.976568222045898,
-        6.102769737243651
-      ],
-      "width": 4.2215,
-      "height": 2.3998,
-      "angle_deg": -60.0602,
-      "area_m2": 4.445,
       "id": "room_4",
-      "name": "Room 4"
+      "name": "Room 4",
+      "min": [
+        -3.597,
+        5.7054
+      ],
+      "max": [
+        -0.9063,
+        10.0852
+      ]
     }
   ]
 }

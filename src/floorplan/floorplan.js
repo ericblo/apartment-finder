@@ -2,29 +2,33 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const SCALE = 40; // px per meter
 const MARGIN = 60; // px padding around the plan
 const MIN_ROOM_DIM_M = 0.1;
+const SNAP_TOLERANCE_M = 0.18; // edges within this distance get pulled flush
 
 const PALETTE = ["#f6c7a3", "#b7dd9a", "#f3b6d3", "#a9d1f0", "#e0c26f", "#c9b6f0"];
 
-// Corner order: [bottom-left, top-left, top-right, bottom-right] in the room's own
-// (possibly rotated) local frame, where "width" runs along u and "height" along v.
-const CORNER_SIGNS = [
-  [-1, -1],
-  [-1, 1],
-  [1, 1],
-  [1, -1],
+// Rooms are stored as axis-aligned rectangles: { min: [x, y], max: [x, y] }.
+// Corner order: [bottom-left, top-left, top-right, bottom-right] in data space.
+// Each corner is controlled by exactly one min/max field per axis.
+const CORNER_DEFS = [
+  { xField: "min", yField: "min" }, // 0
+  { xField: "min", yField: "max" }, // 1
+  { xField: "max", yField: "max" }, // 2
+  { xField: "max", yField: "min" }, // 3
 ];
 
-// Edge midpoints, in the same local frame. Each edge resizes exactly one dimension.
+// Edge order matches the corner pairs they sit between: 0-1 left, 1-2 top,
+// 2-3 right, 3-0 bottom. Each edge resizes exactly one coordinate.
 const EDGE_DEFS = [
-  { varies: "width", su: -1, sv: 0 }, // left
-  { varies: "height", su: 0, sv: 1 }, // top
-  { varies: "width", su: 1, sv: 0 }, // right
-  { varies: "height", su: 0, sv: -1 }, // bottom
+  { field: "min", axis: 0, oppositeField: "max" }, // left: adjusts min.x
+  { field: "max", axis: 1, oppositeField: "min" }, // top: adjusts max.y
+  { field: "max", axis: 0, oppositeField: "min" }, // right: adjusts max.x
+  { field: "min", axis: 1, oppositeField: "max" }, // bottom: adjusts min.y
 ];
 
 const svg = document.getElementById("floorplan-svg");
 const canvasWrap = document.getElementById("canvas-wrap");
 const editToggle = document.getElementById("edit-toggle");
+const cleanupButton = document.getElementById("cleanup-layout");
 const statusEl = document.getElementById("status");
 
 let floorplanData = null;
@@ -34,29 +38,35 @@ let dragState = null;
 let statusClearTimer = null;
 let elements = { roomPolys: [], roomLabels: [], cornerHandles: [], edgeHandles: [] };
 
-function degToRad(deg) {
-  return (deg * Math.PI) / 180;
+function roomWidth(room) {
+  return room.max[0] - room.min[0];
 }
 
-function roomAxes(room) {
-  const r = degToRad(room.angle_deg);
-  return { u: [Math.cos(r), Math.sin(r)], v: [-Math.sin(r), Math.cos(r)] };
+function roomHeight(room) {
+  return room.max[1] - room.min[1];
+}
+
+function roomArea(room) {
+  return roomWidth(room) * roomHeight(room);
+}
+
+function roomCenter(room) {
+  return [(room.min[0] + room.max[0]) / 2, (room.min[1] + room.max[1]) / 2];
 }
 
 function cornerPoint(room, i) {
-  const { u, v } = roomAxes(room);
-  const [su, sv] = CORNER_SIGNS[i];
-  const hw = room.width / 2;
-  const hh = room.height / 2;
-  return [room.center[0] + su * hw * u[0] + sv * hh * v[0], room.center[1] + su * hw * u[1] + sv * hh * v[1]];
+  const def = CORNER_DEFS[i];
+  return [room[def.xField][0], room[def.yField][1]];
 }
 
 function edgeMidPoint(room, edgeIndex) {
-  const { u, v } = roomAxes(room);
   const def = EDGE_DEFS[edgeIndex];
-  const hw = room.width / 2;
-  const hh = room.height / 2;
-  return [room.center[0] + def.su * hw * u[0] + def.sv * hh * v[0], room.center[1] + def.su * hw * u[1] + def.sv * hh * v[1]];
+  const cx = (room.min[0] + room.max[0]) / 2;
+  const cy = (room.min[1] + room.max[1]) / 2;
+  if (def.axis === 0) {
+    return [room[def.field][0], cy];
+  }
+  return [cx, room[def.field][1]];
 }
 
 function computeTransform(rooms) {
@@ -107,14 +117,15 @@ function render() {
 
   floorplanData.rooms.forEach((room, roomIndex) => {
     const fill = createSvgEl("polygon", {
-      class: "room-fill",
+      class: editing ? "room-fill movable" : "room-fill",
       points: pointsAttr(room),
       fill: PALETTE[roomIndex % PALETTE.length],
+      "data-room-index": roomIndex,
     });
     svg.appendChild(fill);
     elements.roomPolys[roomIndex] = fill;
 
-    const [cx, cy] = toSvgPoint(room.center);
+    const [cx, cy] = toSvgPoint(roomCenter(room));
     const label = createSvgEl("text", {
       class: editing ? "room-label editable" : "room-label",
       x: cx,
@@ -165,7 +176,7 @@ function updateRoomVisual(roomIndex) {
 
   elements.roomPolys[roomIndex].setAttribute("points", pointsAttr(room));
 
-  const [cx, cy] = toSvgPoint(room.center);
+  const [cx, cy] = toSvgPoint(roomCenter(room));
   elements.roomLabels[roomIndex].setAttribute("x", cx);
   elements.roomLabels[roomIndex].setAttribute("y", cy);
 
@@ -186,11 +197,6 @@ function updateRoomVisual(roomIndex) {
       handle.setAttribute("cy", hy);
     }
   }
-}
-
-function finalizeRoomGeometry(room) {
-  room.corners = [0, 1, 2, 3].map((i) => cornerPoint(room, i));
-  room.area_m2 = Math.round(room.width * room.height * 1000) / 1000;
 }
 
 function setStatus(kind) {
@@ -232,51 +238,57 @@ function saveFloorplan() {
     });
 }
 
+function clampCoord(value, fixed, isMin) {
+  return isMin ? Math.min(value, fixed - MIN_ROOM_DIM_M) : Math.max(value, fixed + MIN_ROOM_DIM_M);
+}
+
+function applyCornerDrag(room, cornerIndex, dataPoint) {
+  const def = CORNER_DEFS[cornerIndex];
+  const oppositeX = def.xField === "min" ? room.max[0] : room.min[0];
+  const oppositeY = def.yField === "min" ? room.max[1] : room.min[1];
+  room[def.xField][0] = clampCoord(dataPoint[0], oppositeX, def.xField === "min");
+  room[def.yField][1] = clampCoord(dataPoint[1], oppositeY, def.yField === "min");
+}
+
+function applyEdgeDrag(room, edgeIndex, dataPoint) {
+  const def = EDGE_DEFS[edgeIndex];
+  const value = def.axis === 0 ? dataPoint[0] : dataPoint[1];
+  const fixed = room[def.oppositeField][def.axis];
+  room[def.field][def.axis] = clampCoord(value, fixed, def.field === "min");
+}
+
 function startCornerDrag(roomIndex, cornerIndex, pointerId) {
-  const room = floorplanData.rooms[roomIndex];
-  const fixedIndex = (cornerIndex + 2) % 4;
-  dragState = {
-    type: "corner",
-    roomIndex,
-    index: cornerIndex,
-    fixedPoint: cornerPoint(room, fixedIndex),
-    axes: roomAxes(room),
-    pointerId,
-  };
+  dragState = { type: "corner", roomIndex, index: cornerIndex, pointerId };
 }
 
 function startEdgeDrag(roomIndex, edgeIndex, pointerId) {
+  dragState = { type: "edge", roomIndex, index: edgeIndex, pointerId };
+}
+
+function startTranslateDrag(roomIndex, pointerId, startDataPoint) {
   const room = floorplanData.rooms[roomIndex];
-  const fixedIndex = (edgeIndex + 2) % 4;
   dragState = {
-    type: "edge",
+    type: "translate",
     roomIndex,
-    index: edgeIndex,
-    varies: EDGE_DEFS[edgeIndex].varies,
-    fixedPoint: edgeMidPoint(room, fixedIndex),
-    axes: roomAxes(room),
     pointerId,
+    startDataPoint,
+    origMin: [room.min[0], room.min[1]],
+    origMax: [room.max[0], room.max[1]],
   };
 }
 
 function applyDrag(dataPoint) {
   const room = floorplanData.rooms[dragState.roomIndex];
-  const { u, v } = dragState.axes;
-  const fp = dragState.fixedPoint;
-  const d = [dataPoint[0] - fp[0], dataPoint[1] - fp[1]];
-  const alongU = d[0] * u[0] + d[1] * u[1];
-  const alongV = d[0] * v[0] + d[1] * v[1];
 
   if (dragState.type === "corner") {
-    room.width = Math.max(MIN_ROOM_DIM_M, Math.abs(alongU));
-    room.height = Math.max(MIN_ROOM_DIM_M, Math.abs(alongV));
-    room.center = [(fp[0] + dataPoint[0]) / 2, (fp[1] + dataPoint[1]) / 2];
-  } else if (dragState.varies === "width") {
-    room.width = Math.max(MIN_ROOM_DIM_M, Math.abs(alongU));
-    room.center = [fp[0] + (alongU / 2) * u[0], fp[1] + (alongU / 2) * u[1]];
-  } else {
-    room.height = Math.max(MIN_ROOM_DIM_M, Math.abs(alongV));
-    room.center = [fp[0] + (alongV / 2) * v[0], fp[1] + (alongV / 2) * v[1]];
+    applyCornerDrag(room, dragState.index, dataPoint);
+  } else if (dragState.type === "edge") {
+    applyEdgeDrag(room, dragState.index, dataPoint);
+  } else if (dragState.type === "translate") {
+    const dx = dataPoint[0] - dragState.startDataPoint[0];
+    const dy = dataPoint[1] - dragState.startDataPoint[1];
+    room.min = [dragState.origMin[0] + dx, dragState.origMin[1] + dy];
+    room.max = [dragState.origMax[0] + dx, dragState.origMax[1] + dy];
   }
 
   updateRoomVisual(dragState.roomIndex);
@@ -340,6 +352,129 @@ function startRename(roomIndex, labelEl) {
   input.addEventListener("keydown", onKeydown);
 }
 
+// ---- Clean up layout: auto-rotate to vertical, then snap adjacent edges ----
+// Manual, on-demand only -- never runs automatically.
+
+function normalizeAngle(angle) {
+  while (angle > Math.PI / 2) angle -= Math.PI;
+  while (angle <= -Math.PI / 2) angle += Math.PI;
+  return angle;
+}
+
+function rotatePoint([x, y], [cx, cy], angle) {
+  const dx = x - cx;
+  const dy = y - cy;
+  const cosA = Math.cos(angle);
+  const sinA = Math.sin(angle);
+  return [cx + dx * cosA - dy * sinA, cy + dx * sinA + dy * cosA];
+}
+
+function autoRotateToVertical(rooms) {
+  if (rooms.length === 0) return;
+
+  let largest = rooms[0];
+  for (const room of rooms) {
+    if (roomArea(room) > roomArea(largest)) largest = room;
+  }
+
+  // Rooms are always axis-aligned, so the long edge direction is trivially
+  // horizontal or vertical -- this rotation is at most +/-90 degrees, e.g.
+  // "flip the whole layout from landscape to portrait."
+  const direction = roomWidth(largest) >= roomHeight(largest) ? [1, 0] : [0, 1];
+  const edgeAngle = Math.atan2(direction[1], direction[0]);
+  const rotation = normalizeAngle(Math.PI / 2 - edgeAngle);
+  if (Math.abs(rotation) < 1e-9) return;
+
+  const centroid = [
+    rooms.reduce((sum, r) => sum + roomCenter(r)[0], 0) / rooms.length,
+    rooms.reduce((sum, r) => sum + roomCenter(r)[1], 0) / rooms.length,
+  ];
+
+  for (const room of rooms) {
+    const corners = [0, 1, 2, 3].map((i) => rotatePoint(cornerPoint(room, i), centroid, rotation));
+    const xs = corners.map((p) => p[0]);
+    const ys = corners.map((p) => p[1]);
+    room.min = [Math.min(...xs), Math.min(...ys)];
+    room.max = [Math.max(...xs), Math.max(...ys)];
+  }
+}
+
+function rangesOverlap(aMin, aMax, bMin, bMax, tolerance) {
+  return aMin <= bMax + tolerance && bMin <= aMax + tolerance;
+}
+
+function clusterAndSnap(edges, tolerance, shouldLink) {
+  const n = edges.length;
+  const parent = Array.from({ length: n }, (_, i) => i);
+  function find(i) {
+    while (parent[i] !== i) {
+      parent[i] = parent[parent[i]];
+      i = parent[i];
+    }
+    return i;
+  }
+  function union(i, j) {
+    const ri = find(i);
+    const rj = find(j);
+    if (ri !== rj) parent[ri] = rj;
+  }
+
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (edges[i].room === edges[j].room) continue;
+      if (Math.abs(edges[i].value - edges[j].value) <= tolerance && shouldLink(edges[i], edges[j])) {
+        union(i, j);
+      }
+    }
+  }
+
+  const groups = new Map();
+  for (let i = 0; i < n; i++) {
+    const root = find(i);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root).push(edges[i]);
+  }
+
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const avg = group.reduce((sum, e) => sum + e.value, 0) / group.length;
+    for (const e of group) {
+      e.room[e.field][e.axis] = avg;
+    }
+  }
+}
+
+function snapAdjacentEdges(rooms, tolerance) {
+  const vEdges = rooms.flatMap((room) => [
+    { room, field: "min", axis: 0, value: room.min[0] },
+    { room, field: "max", axis: 0, value: room.max[0] },
+  ]);
+  clusterAndSnap(vEdges, tolerance, (a, b) =>
+    rangesOverlap(a.room.min[1], a.room.max[1], b.room.min[1], b.room.max[1], tolerance)
+  );
+
+  const hEdges = rooms.flatMap((room) => [
+    { room, field: "min", axis: 1, value: room.min[1] },
+    { room, field: "max", axis: 1, value: room.max[1] },
+  ]);
+  clusterAndSnap(hEdges, tolerance, (a, b) =>
+    rangesOverlap(a.room.min[0], a.room.max[0], b.room.min[0], b.room.max[0], tolerance)
+  );
+}
+
+function cleanUpLayout() {
+  if (!floorplanData || floorplanData.rooms.length === 0) return;
+
+  autoRotateToVertical(floorplanData.rooms);
+  snapAdjacentEdges(floorplanData.rooms, SNAP_TOLERANCE_M);
+
+  transform = computeTransform(floorplanData.rooms);
+  render();
+  saveFloorplan();
+}
+
+// ---- Event wiring ----
+
 svg.addEventListener("pointerdown", (event) => {
   if (!editing) return;
   const target = event.target;
@@ -363,6 +498,17 @@ svg.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     const roomIndex = Number(target.getAttribute("data-room-index"));
     startRename(roomIndex, target);
+  } else if (target.classList.contains("room-fill")) {
+    event.preventDefault();
+    const roomIndex = Number(target.getAttribute("data-room-index"));
+    const svgRect = svg.getBoundingClientRect();
+    const scaleX = transform.width / svgRect.width;
+    const scaleY = transform.height / svgRect.height;
+    const sx = (event.clientX - svgRect.left) * scaleX;
+    const sy = (event.clientY - svgRect.top) * scaleY;
+    startTranslateDrag(roomIndex, event.pointerId, toDataPoint([sx, sy]));
+    target.classList.add("dragging");
+    svg.setPointerCapture(event.pointerId);
   }
 });
 
@@ -381,11 +527,14 @@ window.addEventListener("pointermove", (event) => {
 window.addEventListener("pointerup", (event) => {
   if (!dragState || event.pointerId !== dragState.pointerId) return;
 
-  const room = floorplanData.rooms[dragState.roomIndex];
-  finalizeRoomGeometry(room);
-
-  const handleList = dragState.type === "corner" ? elements.cornerHandles : elements.edgeHandles;
-  const handle = handleList[dragState.roomIndex][dragState.index];
+  let handle = null;
+  if (dragState.type === "corner") {
+    handle = elements.cornerHandles[dragState.roomIndex][dragState.index];
+  } else if (dragState.type === "edge") {
+    handle = elements.edgeHandles[dragState.roomIndex][dragState.index];
+  } else if (dragState.type === "translate") {
+    handle = elements.roomPolys[dragState.roomIndex];
+  }
   if (handle) handle.classList.remove("dragging");
   if (svg.hasPointerCapture(event.pointerId)) {
     svg.releasePointerCapture(event.pointerId);
@@ -401,6 +550,8 @@ editToggle.addEventListener("click", () => {
   editToggle.classList.toggle("active", editing);
   render();
 });
+
+cleanupButton.addEventListener("click", cleanUpLayout);
 
 fetch("/api/floorplan")
   .then((res) => {

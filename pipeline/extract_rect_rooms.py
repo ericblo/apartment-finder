@@ -16,7 +16,13 @@ Pipeline:
   4. Free space = NOT(silhouette) AND envelope. Connected components on
      that gives one blob per enclosed room (walls *and* large furniture
      act as separators).
-  5. cv2.minAreaRect per blob -> a 4-corner rectangle in world meters.
+  5. cv2.minAreaRect per blob -> a best-fit (possibly rotated) rectangle.
+  6. Auto-rotate the whole layout so the longest edge of the largest room
+     is vertical (rotating every room's corners around the shared centroid
+     of all room centers), then take each room's axis-aligned bounding box
+     in that rotated frame. Rooms are stored as axis-aligned (min, max)
+     corners only -- never an arbitrary rotation -- so this step is not
+     optional, it's how axis-alignment gets enforced at extraction time.
 
 This favors "a reasonable rectangle per room" over pixel-perfect walls —
 some blobs will be smaller than the true room (furniture eats into the
@@ -31,6 +37,7 @@ Outputs (written to src/floorplan/):
 """
 
 import json
+import math
 from pathlib import Path
 
 import cv2
@@ -164,6 +171,74 @@ def extract_room_rects(closed_silhouette, envelope_filled, min_xz):
     return rooms
 
 
+def normalize_angle(angle):
+    """Fold an angle into (-pi/2, pi/2] -- a rectangle's long-edge direction
+    is symmetric under 180-degree rotation, so this picks the smaller turn."""
+    while angle > math.pi / 2:
+        angle -= math.pi
+    while angle <= -math.pi / 2:
+        angle += math.pi
+    return angle
+
+
+def rotate_point(pt, centroid, angle):
+    dx = pt[0] - centroid[0]
+    dy = pt[1] - centroid[1]
+    c, s = math.cos(angle), math.sin(angle)
+    return (centroid[0] + dx * c - dy * s, centroid[1] + dx * s + dy * c)
+
+
+def longest_edge_direction(corners):
+    """Derive the long-edge direction straight from the corner coordinates
+    rather than trusting cv2.minAreaRect's angle convention (which varies by
+    OpenCV version) or assuming width/height map to specific world axes."""
+    best_len = -1.0
+    best_dir = (1.0, 0.0)
+    for i in range(4):
+        p0, p1 = corners[i], corners[(i + 1) % 4]
+        dx, dy = p1[0] - p0[0], p1[1] - p0[1]
+        length = math.hypot(dx, dy)
+        if length > best_len:
+            best_len = length
+            best_dir = (dx, dy)
+    return best_dir
+
+
+def auto_rotate_and_axis_align(rooms):
+    """Rotate every room so the largest room's longest edge is vertical, then
+    take each room's axis-aligned bounding box in that frame. This is how
+    axis-alignment (a hard constraint on the stored data) gets enforced."""
+    if not rooms:
+        return []
+
+    largest = max(rooms, key=lambda r: r["area_m2"])
+    direction = longest_edge_direction(largest["corners"])
+    edge_angle = math.atan2(direction[1], direction[0])
+    rotation = normalize_angle(math.pi / 2 - edge_angle)
+
+    centroid = (
+        sum(r["center"][0] for r in rooms) / len(rooms),
+        sum(r["center"][1] for r in rooms) / len(rooms),
+    )
+
+    aligned = []
+    for room in rooms:
+        if abs(rotation) > 1e-9:
+            rotated_corners = [rotate_point(c, centroid, rotation) for c in room["corners"]]
+        else:
+            rotated_corners = room["corners"]
+        xs = [c[0] for c in rotated_corners]
+        ys = [c[1] for c in rotated_corners]
+        aligned.append({
+            "id": room["id"],
+            "name": room["name"],
+            "min": [round(min(xs), 4), round(min(ys), 4)],
+            "max": [round(max(xs), 4), round(max(ys), 4)],
+        })
+
+    return aligned, math.degrees(rotation)
+
+
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -190,11 +265,19 @@ def main():
     cv2.imwrite(str(OUT_DIR / "wall_raster.png"), closed_sil)
 
     print("Finding room rectangles...")
-    rooms = extract_room_rects(closed_sil, envelope_filled, min_xz)
-    print(f"  found {len(rooms)} rooms:")
-    for room in rooms:
+    raw_rooms = extract_room_rects(closed_sil, envelope_filled, min_xz)
+    print(f"  found {len(raw_rooms)} rooms:")
+    for room in raw_rooms:
         print(f"    {room['id']}: {room['width']:.2f}m x {room['height']:.2f}m, "
               f"area {room['area_m2']:.1f}m2, angle {room['angle_deg']:.1f} deg")
+
+    print("Auto-rotating layout to vertical and axis-aligning...")
+    rooms, rotation_deg = auto_rotate_and_axis_align(raw_rooms)
+    print(f"  rotated whole layout by {rotation_deg:.1f} deg")
+    for room in rooms:
+        w = room["max"][0] - room["min"][0]
+        h = room["max"][1] - room["min"][1]
+        print(f"    {room['id']}: {w:.2f}m x {h:.2f}m (axis-aligned)")
 
     params = {
         "source": str(SCAN_PATH.name),
@@ -210,6 +293,7 @@ def main():
         "raster_width_px": width_px,
         "raster_height_px": height_px,
         "silhouette_close_kernel_px": SILHOUETTE_CLOSE_KERNEL_PX,
+        "auto_rotation_deg": rotation_deg,
     }
     np.save(OUT_DIR / "raster_params.npy", params, allow_pickle=True)
 
@@ -217,10 +301,11 @@ def main():
         "coordinate_frame": {
             "unit": "meters",
             "note": (
-                "x = mesh X axis, y = mesh Z axis (floor-plan plane). "
-                "Not tied to compass orientation. Rectangles are approximate "
-                "(furniture and open doorways can shrink/merge blobs) -- "
-                "fix up by hand in the floor plan editor."
+                "Rotated so the largest room's longest edge is vertical; not tied "
+                "to compass orientation. Rooms are axis-aligned rectangles (min, "
+                "max corners) -- always, never an arbitrary rotation. Rectangles "
+                "are approximate (furniture and open doorways can shrink/merge "
+                "blobs) -- fix up by hand in the floor plan editor."
             ),
         },
         "rooms": rooms,
