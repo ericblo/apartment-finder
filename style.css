@@ -48,6 +48,19 @@ body {
   font-size: 0.95rem;
 }
 
+.nav-link {
+  display: inline-block;
+  margin-top: 10px;
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.nav-link:hover {
+  text-decoration: underline;
+}
+
 .search-bar {
   display: flex;
   gap: 10px;

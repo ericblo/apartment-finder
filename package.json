@@ -4,7 +4,8 @@
   "description": "Extracts frames from an apartment walkthrough video and uses Claude to detect which room items are in.",
   "type": "commonjs",
   "scripts": {
-    "process-video": "node process-video.js"
+    "process-video": "node process-video.js",
+    "floorplan": "node src/floorplan/server.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1"

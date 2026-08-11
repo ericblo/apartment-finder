@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Floor Plan Editor</title>
+  <link rel="stylesheet" href="floorplan.css">
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <h1>Floor Plan</h1>
+      <p class="subtitle">Drag a vertex to reshape a room. Edits save automatically.</p>
+      <a class="nav-link" href="../../index.html">&larr; Item Finder</a>
+    </header>
+
+    <div class="toolbar">
+      <button type="button" id="edit-toggle">Enable editing</button>
+      <span class="status" id="status" aria-live="polite"></span>
+    </div>
+
+    <div class="canvas-wrap">
+      <svg id="floorplan-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+  </div>
+
+  <script src="floorplan.js"></script>
+</body>
+</html>

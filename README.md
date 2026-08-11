@@ -33,3 +33,15 @@ The script will:
 5. Print a per-frame summary and the final item -> room mapping.
 
 `items.json` is created in the project root if it doesn't already exist, and updated in place on each run.
+
+## Floor Plan Editor
+
+`src/floorplan/` holds the apartment's floor plan — room polygons (in meters, derived from a LiDAR scan) plus a small editor for reshaping them.
+
+```
+npm run floorplan
+```
+
+Then open http://localhost:4173/. Click "Enable editing" to drag room vertices; each edit is saved automatically to `src/floorplan/floorplan_data.json` via a small local Node server (`src/floorplan/server.js`). This only works when running the server locally — the static GitHub Pages deployment has no backend to persist edits.
+
+This server also serves the item finder (`index.html`) from the same origin, so `npm run floorplan` is the easiest way to run the whole app locally — both pages link to each other ("Edit floor plan" / "Item Finder").
