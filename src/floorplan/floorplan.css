@@ -130,6 +130,86 @@ body {
   color: #b91c1c;
 }
 
+.token-panel {
+  max-width: 640px;
+  margin: 0 auto 20px;
+  padding: 14px 16px;
+  background: #fff8ee;
+  border: 1px solid #f0dfc0;
+  border-radius: var(--radius);
+}
+
+.token-panel-desc {
+  margin: 0 0 10px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #6b5a3a;
+}
+
+.token-panel-desc code {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.token-row {
+  display: flex;
+  gap: 8px;
+}
+
+#token-input {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+  border: 1px solid #d7d7d7;
+  border-radius: 6px;
+}
+
+#token-save,
+#token-clear {
+  padding: 8px 14px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+#token-save {
+  color: #fff;
+  background: var(--outline);
+}
+
+#token-save:hover {
+  background: #444;
+}
+
+#token-clear {
+  color: var(--outline);
+  background: #fff;
+  border: 1px solid #ccc;
+}
+
+#token-clear:hover {
+  background: #f0f0f0;
+}
+
+.token-status {
+  display: block;
+  margin-top: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.token-status.saved {
+  color: #15803d;
+}
+
+.token-status.error {
+  color: #b91c1c;
+}
+
 .canvas-wrap {
   position: relative;
   background: var(--panel);

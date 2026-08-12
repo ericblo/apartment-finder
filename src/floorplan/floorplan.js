@@ -25,11 +25,27 @@ const EDGE_DEFS = [
   { field: "min", axis: 1, oppositeField: "max" }, // bottom: adjusts min.y
 ];
 
+// Local dev (npm run floorplan) has a real server with GET/POST /api/floorplan.
+// Anywhere else (e.g. GitHub Pages) is static-only -- saves go straight to
+// GitHub via the Contents API instead, using a token the user provides.
+const IS_LOCAL = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+
+const GITHUB_OWNER = "ericblo";
+const GITHUB_REPO = "apartment-finder";
+const GITHUB_BRANCH = "main";
+const GITHUB_FILE_PATH = "src/floorplan/rect_rooms.json";
+const GITHUB_TOKEN_STORAGE_KEY = "apartment-finder:github-token";
+
 const svg = document.getElementById("floorplan-svg");
 const canvasWrap = document.getElementById("canvas-wrap");
 const editToggle = document.getElementById("edit-toggle");
 const cleanupButton = document.getElementById("cleanup-layout");
 const statusEl = document.getElementById("status");
+const tokenPanel = document.getElementById("token-panel");
+const tokenInput = document.getElementById("token-input");
+const tokenSaveButton = document.getElementById("token-save");
+const tokenClearButton = document.getElementById("token-clear");
+const tokenStatusEl = document.getElementById("token-status");
 
 let floorplanData = null;
 let transform = null;
@@ -199,7 +215,7 @@ function updateRoomVisual(roomIndex) {
   }
 }
 
-function setStatus(kind) {
+function setStatus(kind, message) {
   clearTimeout(statusClearTimer);
   statusEl.classList.remove("saving", "saved", "error");
 
@@ -213,14 +229,76 @@ function setStatus(kind) {
       statusEl.textContent = "";
     }, 2000);
   } else if (kind === "error") {
-    statusEl.textContent = "Save failed";
+    statusEl.textContent = message || "Save failed";
     statusEl.classList.add("error");
   } else {
     statusEl.textContent = "";
   }
 }
 
+function utf8ToBase64(str) {
+  const bytes = new TextEncoder().encode(str);
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
+function getGithubToken() {
+  return localStorage.getItem(GITHUB_TOKEN_STORAGE_KEY) || "";
+}
+
+function saveViaGithubApi() {
+  const token = getGithubToken();
+  if (!token) {
+    setStatus("error", "No GitHub token set");
+    return;
+  }
+
+  const apiUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_FILE_PATH}`;
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+  };
+
+  setStatus("saving");
+
+  fetch(`${apiUrl}?ref=${GITHUB_BRANCH}`, { headers })
+    .then((res) => {
+      if (!res.ok) throw new Error(`Could not read current file (HTTP ${res.status})`);
+      return res.json();
+    })
+    .then((current) => {
+      const content = utf8ToBase64(JSON.stringify(floorplanData, null, 2) + "\n");
+      return fetch(apiUrl, {
+        method: "PUT",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: "Update floor plan via editor",
+          content,
+          sha: current.sha,
+          branch: GITHUB_BRANCH,
+        }),
+      });
+    })
+    .then((res) => {
+      if (!res.ok) throw new Error(`GitHub commit failed (HTTP ${res.status})`);
+      return res.json();
+    })
+    .then(() => setStatus("saved"))
+    .catch((err) => {
+      console.error("Failed to save floor plan via GitHub API:", err);
+      setStatus("error", "GitHub save failed");
+    });
+}
+
 function saveFloorplan() {
+  if (!IS_LOCAL) {
+    saveViaGithubApi();
+    return;
+  }
+
   setStatus("saving");
   fetch("/api/floorplan", {
     method: "POST",
@@ -553,7 +631,35 @@ editToggle.addEventListener("click", () => {
 
 cleanupButton.addEventListener("click", cleanUpLayout);
 
-fetch("/api/floorplan")
+function refreshTokenStatus() {
+  const hasToken = !!getGithubToken();
+  tokenStatusEl.textContent = hasToken ? "Token saved ✓" : "No token saved — saves will fail until you add one.";
+  tokenStatusEl.classList.toggle("saved", hasToken);
+  tokenStatusEl.classList.toggle("error", !hasToken);
+}
+
+if (!IS_LOCAL) {
+  tokenPanel.hidden = false;
+  refreshTokenStatus();
+
+  tokenSaveButton.addEventListener("click", () => {
+    const value = tokenInput.value.trim();
+    if (!value) return;
+    localStorage.setItem(GITHUB_TOKEN_STORAGE_KEY, value);
+    tokenInput.value = "";
+    refreshTokenStatus();
+  });
+
+  tokenClearButton.addEventListener("click", () => {
+    localStorage.removeItem(GITHUB_TOKEN_STORAGE_KEY);
+    tokenInput.value = "";
+    refreshTokenStatus();
+  });
+}
+
+const loadUrl = IS_LOCAL ? "/api/floorplan" : "rect_rooms.json";
+
+fetch(loadUrl)
   .then((res) => {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();

@@ -49,9 +49,17 @@ Then open http://localhost:4173/. Click "Enable editing" to:
 - **Drag a corner or edge handle** to resize that room (adjusts one or two coordinates directly — never a rotation).
 - **Click a label** to rename a room.
 
-Each edit saves automatically to `src/floorplan/rect_rooms.json` via a small local Node server (`src/floorplan/server.js`). This only works when running the server locally — the static GitHub Pages deployment has no backend to persist edits.
+Each edit saves automatically to `src/floorplan/rect_rooms.json` via a small local Node server (`src/floorplan/server.js`) when running locally.
 
 This server also serves the item finder (`index.html`) from the same origin, so `npm run floorplan` is the easiest way to run the whole app locally — both pages link to each other ("Edit floor plan" / "Item Finder").
+
+### Saving from the live GitHub Pages site
+
+GitHub Pages is static hosting — it can't run `server.js`, so the deployed editor at https://ericblo.github.io/apartment-finder/src/floorplan/floorplan.html saves a different way: it commits `rect_rooms.json` directly to the repo via the GitHub Contents API, using a Personal Access Token you provide.
+
+On first visit to the non-local page, a token panel appears above the floor plan. Paste in a token and click "Save token" — it's stored only in that browser's `localStorage`, never in the deployed source. Use a **fine-grained token scoped to just this repo** with "Contents: Read and write" permission (not a broad classic token), and revoke it from GitHub's token settings whenever you want to cut off access. Each save while editing there becomes a real commit on `main`, which also triggers a Pages rebuild — so the live page reflects your latest edit within a minute or two.
+
+Locally (`npm run floorplan`), none of this applies — saves go through `server.js` as before and the token panel stays hidden.
 
 **"Clean up layout"** is a separate, manual, on-demand button (never runs automatically) that does two things in sequence:
 1. Rotates the whole layout so the largest room's longest edge is vertical.
