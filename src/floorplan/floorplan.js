@@ -27,25 +27,20 @@ const EDGE_DEFS = [
 
 // Local dev (npm run floorplan) has a real server with GET/POST /api/floorplan.
 // Anywhere else (e.g. GitHub Pages) is static-only -- saves go straight to
-// GitHub via the Contents API instead, using a token the user provides.
+// Supabase instead, using a public row keyed by SUPABASE_ROW_ID.
 const IS_LOCAL = location.hostname === "localhost" || location.hostname === "127.0.0.1";
 
-const GITHUB_OWNER = "ericblo";
-const GITHUB_REPO = "apartment-finder";
-const GITHUB_BRANCH = "main";
-const GITHUB_FILE_PATH = "src/floorplan/rect_rooms.json";
-const GITHUB_TOKEN_STORAGE_KEY = "apartment-finder:github-token";
+const SUPABASE_URL = "https://gkfgypoqicqbjfmcnpxk.supabase.co";
+const SUPABASE_KEY = "sb_publishable_PJG8viNrEpnPCr1TMpuhNA_6L6Kx4Nq";
+const SUPABASE_TABLE = "floorplan_state";
+const SUPABASE_ROW_ID = 1;
+const supabaseClient = IS_LOCAL ? null : window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const svg = document.getElementById("floorplan-svg");
 const canvasWrap = document.getElementById("canvas-wrap");
 const editToggle = document.getElementById("edit-toggle");
 const cleanupButton = document.getElementById("cleanup-layout");
 const statusEl = document.getElementById("status");
-const tokenPanel = document.getElementById("token-panel");
-const tokenInput = document.getElementById("token-input");
-const tokenSaveButton = document.getElementById("token-save");
-const tokenClearButton = document.getElementById("token-clear");
-const tokenStatusEl = document.getElementById("token-status");
 
 let floorplanData = null;
 let transform = null;
@@ -236,93 +231,34 @@ function setStatus(kind, message) {
   }
 }
 
-function utf8ToBase64(str) {
-  const bytes = new TextEncoder().encode(str);
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
-}
-
-function getGithubToken() {
-  return localStorage.getItem(GITHUB_TOKEN_STORAGE_KEY) || "";
-}
-
 // Saves happen on pointerup, on rename, and from "Clean up layout" -- these
-// can fire in close succession. The GitHub Contents API requires the current
-// file `sha` on every write and rejects (409) if it's stale, so concurrent
-// GET-then-PUT sequences race each other: a later save can read the sha
-// before an earlier save's PUT lands, then get rejected even though the
-// earlier save's commit is visible on GitHub. Chain saves so each one's GET
-// only starts after the previous save's PUT has finished, and retry once on
-// a 409 in case something outside this chain (e.g. an edit made directly on
-// GitHub) changed the sha.
-let githubSaveChain = Promise.resolve();
+// can fire in close succession. Chain them so a save's request always goes
+// out after the previous one has finished, keeping writes in the order the
+// user triggered them instead of letting network completion order decide.
+let supabaseSaveChain = Promise.resolve();
 
-function putFloorplanToGithub(apiUrl, headers, sha) {
-  const content = utf8ToBase64(JSON.stringify(floorplanData, null, 2) + "\n");
-  return fetch(apiUrl, {
-    method: "PUT",
-    headers: { ...headers, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      message: "Update floor plan via editor",
-      content,
-      sha,
-      branch: GITHUB_BRANCH,
-    }),
-  });
-}
-
-function fetchCurrentSha(apiUrl, headers) {
-  return fetch(`${apiUrl}?ref=${GITHUB_BRANCH}`, { headers })
-    .then((res) => {
-      if (!res.ok) throw new Error(`Could not read current file (HTTP ${res.status})`);
-      return res.json();
-    })
-    .then((current) => current.sha);
-}
-
-function saveViaGithubApi() {
-  const token = getGithubToken();
-  if (!token) {
-    setStatus("error", "No GitHub token set");
-    return;
-  }
-
-  const apiUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_FILE_PATH}`;
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    Accept: "application/vnd.github+json",
-  };
-
+function saveViaSupabase() {
   setStatus("saving");
 
-  githubSaveChain = githubSaveChain.then(() =>
-    fetchCurrentSha(apiUrl, headers)
-      .then((sha) => putFloorplanToGithub(apiUrl, headers, sha))
-      .then((res) => {
-        if (res.status === 409) {
-          // Stale sha -- refetch and retry once before giving up.
-          return fetchCurrentSha(apiUrl, headers).then((sha) => putFloorplanToGithub(apiUrl, headers, sha));
-        }
-        return res;
-      })
-      .then((res) => {
-        if (!res.ok) throw new Error(`GitHub commit failed (HTTP ${res.status})`);
-        return res.json();
-      })
-      .then(() => setStatus("saved"))
-      .catch((err) => {
-        console.error("Failed to save floor plan via GitHub API:", err);
-        setStatus("error", "GitHub save failed");
-      })
-  );
+  supabaseSaveChain = supabaseSaveChain
+    .then(() =>
+      supabaseClient
+        .from(SUPABASE_TABLE)
+        .upsert({ id: SUPABASE_ROW_ID, data: floorplanData, updated_at: new Date().toISOString() })
+    )
+    .then(({ error }) => {
+      if (error) throw error;
+      setStatus("saved");
+    })
+    .catch((err) => {
+      console.error("Failed to save floor plan via Supabase:", err);
+      setStatus("error", "Save failed");
+    });
 }
 
 function saveFloorplan() {
   if (!IS_LOCAL) {
-    saveViaGithubApi();
+    saveViaSupabase();
     return;
   }
 
@@ -658,39 +594,25 @@ editToggle.addEventListener("click", () => {
 
 cleanupButton.addEventListener("click", cleanUpLayout);
 
-function refreshTokenStatus() {
-  const hasToken = !!getGithubToken();
-  tokenStatusEl.textContent = hasToken ? "Token saved ✓" : "No token saved — saves will fail until you add one.";
-  tokenStatusEl.classList.toggle("saved", hasToken);
-  tokenStatusEl.classList.toggle("error", !hasToken);
+function loadFloorplanData() {
+  if (IS_LOCAL) {
+    return fetch("/api/floorplan").then((res) => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    });
+  }
+  return supabaseClient
+    .from(SUPABASE_TABLE)
+    .select("data")
+    .eq("id", SUPABASE_ROW_ID)
+    .single()
+    .then(({ data, error }) => {
+      if (error) throw error;
+      return data.data;
+    });
 }
 
-if (!IS_LOCAL) {
-  tokenPanel.hidden = false;
-  refreshTokenStatus();
-
-  tokenSaveButton.addEventListener("click", () => {
-    const value = tokenInput.value.trim();
-    if (!value) return;
-    localStorage.setItem(GITHUB_TOKEN_STORAGE_KEY, value);
-    tokenInput.value = "";
-    refreshTokenStatus();
-  });
-
-  tokenClearButton.addEventListener("click", () => {
-    localStorage.removeItem(GITHUB_TOKEN_STORAGE_KEY);
-    tokenInput.value = "";
-    refreshTokenStatus();
-  });
-}
-
-const loadUrl = IS_LOCAL ? "/api/floorplan" : "rect_rooms.json";
-
-fetch(loadUrl)
-  .then((res) => {
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  })
+loadFloorplanData()
   .then((data) => {
     floorplanData = data;
     transform = computeTransform(data.rooms);

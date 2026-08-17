@@ -20,28 +20,12 @@
       <span class="status" id="status" aria-live="polite"></span>
     </div>
 
-    <div class="token-panel" id="token-panel" hidden>
-      <p class="token-panel-desc">
-        This page can't run a server, so saving here commits <code>rect_rooms.json</code>
-        straight to GitHub via a Personal Access Token you provide. The token is stored
-        only in this browser (<code>localStorage</code>) — never in the deployed code.
-        Use a <strong>fine-grained token scoped to just this repo</strong> with
-        "Contents: Read and write" permission, treat it like a password, and revoke it
-        from GitHub any time you want to cut off access.
-      </p>
-      <div class="token-row">
-        <input type="password" id="token-input" placeholder="GitHub personal access token" autocomplete="off">
-        <button type="button" id="token-save">Save token</button>
-        <button type="button" id="token-clear">Clear</button>
-      </div>
-      <span class="token-status" id="token-status"></span>
-    </div>
-
     <div class="canvas-wrap" id="canvas-wrap">
       <svg id="floorplan-svg" xmlns="http://www.w3.org/2000/svg"></svg>
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="floorplan.js"></script>
 </body>
 </html>
