@@ -249,6 +249,40 @@ function getGithubToken() {
   return localStorage.getItem(GITHUB_TOKEN_STORAGE_KEY) || "";
 }
 
+// Saves happen on pointerup, on rename, and from "Clean up layout" -- these
+// can fire in close succession. The GitHub Contents API requires the current
+// file `sha` on every write and rejects (409) if it's stale, so concurrent
+// GET-then-PUT sequences race each other: a later save can read the sha
+// before an earlier save's PUT lands, then get rejected even though the
+// earlier save's commit is visible on GitHub. Chain saves so each one's GET
+// only starts after the previous save's PUT has finished, and retry once on
+// a 409 in case something outside this chain (e.g. an edit made directly on
+// GitHub) changed the sha.
+let githubSaveChain = Promise.resolve();
+
+function putFloorplanToGithub(apiUrl, headers, sha) {
+  const content = utf8ToBase64(JSON.stringify(floorplanData, null, 2) + "\n");
+  return fetch(apiUrl, {
+    method: "PUT",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: "Update floor plan via editor",
+      content,
+      sha,
+      branch: GITHUB_BRANCH,
+    }),
+  });
+}
+
+function fetchCurrentSha(apiUrl, headers) {
+  return fetch(`${apiUrl}?ref=${GITHUB_BRANCH}`, { headers })
+    .then((res) => {
+      if (!res.ok) throw new Error(`Could not read current file (HTTP ${res.status})`);
+      return res.json();
+    })
+    .then((current) => current.sha);
+}
+
 function saveViaGithubApi() {
   const token = getGithubToken();
   if (!token) {
@@ -264,33 +298,26 @@ function saveViaGithubApi() {
 
   setStatus("saving");
 
-  fetch(`${apiUrl}?ref=${GITHUB_BRANCH}`, { headers })
-    .then((res) => {
-      if (!res.ok) throw new Error(`Could not read current file (HTTP ${res.status})`);
-      return res.json();
-    })
-    .then((current) => {
-      const content = utf8ToBase64(JSON.stringify(floorplanData, null, 2) + "\n");
-      return fetch(apiUrl, {
-        method: "PUT",
-        headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: "Update floor plan via editor",
-          content,
-          sha: current.sha,
-          branch: GITHUB_BRANCH,
-        }),
-      });
-    })
-    .then((res) => {
-      if (!res.ok) throw new Error(`GitHub commit failed (HTTP ${res.status})`);
-      return res.json();
-    })
-    .then(() => setStatus("saved"))
-    .catch((err) => {
-      console.error("Failed to save floor plan via GitHub API:", err);
-      setStatus("error", "GitHub save failed");
-    });
+  githubSaveChain = githubSaveChain.then(() =>
+    fetchCurrentSha(apiUrl, headers)
+      .then((sha) => putFloorplanToGithub(apiUrl, headers, sha))
+      .then((res) => {
+        if (res.status === 409) {
+          // Stale sha -- refetch and retry once before giving up.
+          return fetchCurrentSha(apiUrl, headers).then((sha) => putFloorplanToGithub(apiUrl, headers, sha));
+        }
+        return res;
+      })
+      .then((res) => {
+        if (!res.ok) throw new Error(`GitHub commit failed (HTTP ${res.status})`);
+        return res.json();
+      })
+      .then(() => setStatus("saved"))
+      .catch((err) => {
+        console.error("Failed to save floor plan via GitHub API:", err);
+        setStatus("error", "GitHub save failed");
+      })
+  );
 }
 
 function saveFloorplan() {
