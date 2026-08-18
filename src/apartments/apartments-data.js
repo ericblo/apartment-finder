@@ -28,10 +28,10 @@ function loadApartments() {
     .from(APARTMENTS_SUPABASE_TABLE)
     .select("data")
     .eq("id", APARTMENTS_SUPABASE_ROW_ID)
-    .single()
+    .maybeSingle()
     .then(({ data, error }) => {
       if (error) throw error;
-      return data.data;
+      return data ? data.data : { apartments: [] };
     });
 }
 
