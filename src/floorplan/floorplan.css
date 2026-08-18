@@ -197,11 +197,6 @@ body {
 
 .canvas-wrap {
   position: relative;
-  /* width is set inline by floorplan.js's render(), sized to the actual
-     plan -- this is just a sane default before the first render. */
-  width: fit-content;
-  max-width: 100%;
-  margin: 0 auto;
   background: var(--panel);
   border-radius: var(--radius);
   padding: 16px;
