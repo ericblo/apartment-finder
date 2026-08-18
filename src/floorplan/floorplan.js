@@ -714,7 +714,15 @@ function deleteFloorplanData() {
   if (IS_LOCAL) {
     return fetch(`/api/floorplan?apartment=${encodeURIComponent(APARTMENT_ID)}`, { method: "DELETE" });
   }
-  return supabaseClient.from(SUPABASE_TABLE).delete().eq("apartment_id", APARTMENT_ID);
+  // The query builder is thenable but doesn't implement .catch() itself --
+  // .then() here turns it into a real Promise so the caller's .catch() works.
+  return supabaseClient
+    .from(SUPABASE_TABLE)
+    .delete()
+    .eq("apartment_id", APARTMENT_ID)
+    .then(({ error }) => {
+      if (error) throw error;
+    });
 }
 
 function deleteApartment() {
