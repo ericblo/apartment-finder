@@ -1,6 +1,6 @@
 const SVG_NS = "http://www.w3.org/2000/svg";
 const SCALE = 40; // px per meter
-const MARGIN = 60; // px padding around the plan
+const MARGIN = 24; // px padding around the plan
 const MIN_ROOM_DIM_M = 0.1;
 const SNAP_TOLERANCE_M = 0.18; // edges within this distance get pulled flush
 
