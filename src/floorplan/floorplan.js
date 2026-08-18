@@ -27,19 +27,32 @@ const EDGE_DEFS = [
 
 // Local dev (npm run floorplan) has a real server with GET/POST /api/floorplan.
 // Anywhere else (e.g. GitHub Pages) is static-only -- saves go straight to
-// Supabase instead, using a public row keyed by SUPABASE_ROW_ID.
+// Supabase instead, using a public row per apartment keyed by apartment_id.
 const IS_LOCAL = location.hostname === "localhost" || location.hostname === "127.0.0.1";
 
 const SUPABASE_URL = "https://gkfgypoqicqbjfmcnpxk.supabase.co";
 const SUPABASE_KEY = "sb_publishable_PJG8viNrEpnPCr1TMpuhNA_6L6Kx4Nq";
 const SUPABASE_TABLE = "floorplan_state";
-const SUPABASE_ROW_ID = 1;
 const supabaseClient = IS_LOCAL ? null : window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Each apartment has its own floor plan, selected via ?apartment=<id>. A brand
+// new apartment has no saved floor plan yet, so loadFloorplanData() falls back
+// to this single starter room instead of failing.
+const APARTMENT_ID = new URLSearchParams(location.search).get("apartment");
+const DEFAULT_FLOORPLAN_DATA = { rooms: [{ id: "room_1", name: "New Room", min: [0, 0], max: [5, 5] }] };
+
+if (!APARTMENT_ID) {
+  location.href = "../apartments/apartments.html";
+}
 
 const svg = document.getElementById("floorplan-svg");
 const canvasWrap = document.getElementById("canvas-wrap");
 const editToggle = document.getElementById("edit-toggle");
 const cleanupButton = document.getElementById("cleanup-layout");
+const addRoomButton = document.getElementById("add-room");
+const deleteRoomButton = document.getElementById("delete-room");
+const deleteButton = document.getElementById("delete-apartment");
+const titleEl = document.getElementById("apartment-title");
 const statusEl = document.getElementById("status");
 
 let floorplanData = null;
@@ -47,6 +60,7 @@ let transform = null;
 let editing = false;
 let dragState = null;
 let statusClearTimer = null;
+let selectedRoomIndex = null;
 let elements = { roomPolys: [], roomLabels: [], cornerHandles: [], edgeHandles: [] };
 
 function roomWidth(room) {
@@ -127,8 +141,10 @@ function render() {
   svg.setAttribute("height", transform.height);
 
   floorplanData.rooms.forEach((room, roomIndex) => {
+    let fillClass = editing ? "room-fill movable" : "room-fill";
+    if (editing && roomIndex === selectedRoomIndex) fillClass += " selected";
     const fill = createSvgEl("polygon", {
-      class: editing ? "room-fill movable" : "room-fill",
+      class: fillClass,
       points: pointsAttr(room),
       fill: PALETTE[roomIndex % PALETTE.length],
       "data-room-index": roomIndex,
@@ -244,7 +260,10 @@ function saveViaSupabase() {
     .then(() =>
       supabaseClient
         .from(SUPABASE_TABLE)
-        .upsert({ id: SUPABASE_ROW_ID, data: floorplanData, updated_at: new Date().toISOString() })
+        .upsert(
+          { apartment_id: APARTMENT_ID, data: floorplanData, updated_at: new Date().toISOString() },
+          { onConflict: "apartment_id" }
+        )
     )
     .then(({ error }) => {
       if (error) throw error;
@@ -263,7 +282,7 @@ function saveFloorplan() {
   }
 
   setStatus("saving");
-  fetch("/api/floorplan", {
+  fetch(`/api/floorplan?apartment=${encodeURIComponent(APARTMENT_ID)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(floorplanData),
@@ -514,6 +533,78 @@ function cleanUpLayout() {
   saveFloorplan();
 }
 
+// ---- Room selection & add/delete ----
+
+function applySelectionVisual() {
+  elements.roomPolys.forEach((poly, i) => {
+    if (poly) poly.classList.toggle("selected", i === selectedRoomIndex);
+  });
+}
+
+function updateToolButtonsState() {
+  addRoomButton.disabled = !editing;
+  deleteRoomButton.disabled = !editing || selectedRoomIndex === null;
+}
+
+function selectRoom(roomIndex) {
+  selectedRoomIndex = roomIndex;
+  applySelectionVisual();
+  updateToolButtonsState();
+}
+
+function deselectRoom() {
+  if (selectedRoomIndex === null) return;
+  selectedRoomIndex = null;
+  applySelectionVisual();
+  updateToolButtonsState();
+}
+
+function addRoom() {
+  if (!editing || !floorplanData) return;
+
+  const existingIds = new Set(floorplanData.rooms.map((r) => r.id));
+  let n = floorplanData.rooms.length + 1;
+  while (existingIds.has(`room_${n}`)) n++;
+
+  const SIZE = 3; // meters, new room is a plain square
+  let minX = 0;
+  let minY = 0;
+  if (floorplanData.rooms.length > 0) {
+    minX = Math.max(...floorplanData.rooms.map((r) => r.max[0])) + 1;
+    minY = Math.min(...floorplanData.rooms.map((r) => r.min[1]));
+  }
+
+  floorplanData.rooms.push({
+    id: `room_${n}`,
+    name: `Room ${n}`,
+    min: [minX, minY],
+    max: [minX + SIZE, minY + SIZE],
+  });
+
+  selectedRoomIndex = floorplanData.rooms.length - 1;
+  transform = computeTransform(floorplanData.rooms);
+  render();
+  updateToolButtonsState();
+  saveFloorplan();
+}
+
+function deleteRoom() {
+  if (selectedRoomIndex === null || !floorplanData) return;
+  if (!confirm("Delete this room?")) return;
+
+  floorplanData.rooms.splice(selectedRoomIndex, 1);
+  selectedRoomIndex = null;
+
+  if (floorplanData.rooms.length === 0) {
+    floorplanData.rooms.push({ id: "room_1", name: "New Room", min: [0, 0], max: [5, 5] });
+  }
+
+  transform = computeTransform(floorplanData.rooms);
+  render();
+  updateToolButtonsState();
+  saveFloorplan();
+}
+
 // ---- Event wiring ----
 
 svg.addEventListener("pointerdown", (event) => {
@@ -542,6 +633,7 @@ svg.addEventListener("pointerdown", (event) => {
   } else if (target.classList.contains("room-fill")) {
     event.preventDefault();
     const roomIndex = Number(target.getAttribute("data-room-index"));
+    selectRoom(roomIndex);
     const svgRect = svg.getBoundingClientRect();
     const scaleX = transform.width / svgRect.width;
     const scaleY = transform.height / svgRect.height;
@@ -550,6 +642,8 @@ svg.addEventListener("pointerdown", (event) => {
     startTranslateDrag(roomIndex, event.pointerId, toDataPoint([sx, sy]));
     target.classList.add("dragging");
     svg.setPointerCapture(event.pointerId);
+  } else if (target === svg) {
+    deselectRoom();
   }
 });
 
@@ -589,14 +683,18 @@ editToggle.addEventListener("click", () => {
   editing = !editing;
   editToggle.textContent = editing ? "Disable editing" : "Enable editing";
   editToggle.classList.toggle("active", editing);
+  if (!editing) selectedRoomIndex = null;
   render();
+  updateToolButtonsState();
 });
 
 cleanupButton.addEventListener("click", cleanUpLayout);
+addRoomButton.addEventListener("click", addRoom);
+deleteRoomButton.addEventListener("click", deleteRoom);
 
 function loadFloorplanData() {
   if (IS_LOCAL) {
-    return fetch("/api/floorplan").then((res) => {
+    return fetch(`/api/floorplan?apartment=${encodeURIComponent(APARTMENT_ID)}`).then((res) => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     });
@@ -604,13 +702,65 @@ function loadFloorplanData() {
   return supabaseClient
     .from(SUPABASE_TABLE)
     .select("data")
-    .eq("id", SUPABASE_ROW_ID)
-    .single()
+    .eq("apartment_id", APARTMENT_ID)
+    .maybeSingle()
     .then(({ data, error }) => {
       if (error) throw error;
-      return data.data;
+      return data ? data.data : DEFAULT_FLOORPLAN_DATA;
     });
 }
+
+function deleteFloorplanData() {
+  if (IS_LOCAL) {
+    return fetch(`/api/floorplan?apartment=${encodeURIComponent(APARTMENT_ID)}`, { method: "DELETE" });
+  }
+  return supabaseClient.from(SUPABASE_TABLE).delete().eq("apartment_id", APARTMENT_ID);
+}
+
+function deleteApartment() {
+  if (!confirm("Delete this apartment? This can't be undone.")) return;
+
+  deleteButton.disabled = true;
+  deleteButton.textContent = "Deleting…";
+
+  loadApartments()
+    .then((data) => {
+      const remaining = (data.apartments || []).filter((a) => a.id !== APARTMENT_ID);
+      return saveApartments(remaining);
+    })
+    .then(() =>
+      deleteFloorplanData().catch((err) => {
+        // Apartment record is already gone -- an orphaned floor plan row/entry
+        // is harmless, so log and continue rather than blocking navigation.
+        console.error("Failed to clean up floor plan data:", err);
+      })
+    )
+    .then(() => {
+      window.location.href = "../apartments/apartments.html";
+    })
+    .catch((err) => {
+      console.error("Failed to delete apartment:", err);
+      deleteButton.disabled = false;
+      deleteButton.textContent = "Delete apartment";
+      setStatus("error", "Delete failed");
+    });
+}
+
+deleteButton.addEventListener("click", deleteApartment);
+
+loadApartments()
+  .then((data) => {
+    const apartment = (data.apartments || []).find((a) => a.id === APARTMENT_ID);
+    if (!apartment) {
+      window.location.href = "../apartments/apartments.html";
+      return;
+    }
+    titleEl.textContent = apartment.name;
+    document.title = `${apartment.name} — Floor Plan`;
+  })
+  .catch((err) => {
+    console.error("Failed to load apartment info:", err);
+  });
 
 loadFloorplanData()
   .then((data) => {

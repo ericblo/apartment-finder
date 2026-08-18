@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your Apartments</title>
+  <link rel="stylesheet" href="apartments.css">
+</head>
+<body>
+  <div class="app">
+    <a class="nav-link" href="../../index.html">&larr; Item Finder</a>
+
+    <div class="list-header">
+      <h1>Your apartments</h1>
+      <a class="add-button" id="add-apartment-button" href="add-apartment.html" aria-label="Add apartment">+</a>
+    </div>
+
+    <div class="apartment-list" id="apartment-list"></div>
+    <p class="form-status" id="status" aria-live="polite"></p>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="apartments-data.js"></script>
+  <script src="apartments.js"></script>
+</body>
+</html>

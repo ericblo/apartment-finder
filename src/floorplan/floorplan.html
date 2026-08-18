@@ -9,14 +9,21 @@
 <body>
   <div class="app">
     <header class="app-header">
-      <h1>Floor Plan</h1>
-      <p class="subtitle">Drag a room to move it, a corner/edge to resize it. Click a label to rename. Edits save automatically.</p>
-      <a class="nav-link" href="../../index.html">&larr; Item Finder</a>
+      <a class="nav-link" href="../apartments/apartments.html">&larr; Your apartments</a>
+      <div class="detail-header-row">
+        <div>
+          <h1 id="apartment-title">Floor Plan</h1>
+          <p class="subtitle">Drag a room to move it, a corner/edge to resize it. Click a label to rename, click a room to select it. Edits save automatically.</p>
+        </div>
+        <button type="button" id="delete-apartment" class="delete-button">Delete apartment</button>
+      </div>
     </header>
 
     <div class="toolbar">
       <button type="button" id="edit-toggle">Enable editing</button>
       <button type="button" id="cleanup-layout">Clean up layout</button>
+      <button type="button" id="add-room" disabled>Add room</button>
+      <button type="button" id="delete-room" class="delete-button" disabled>Delete room</button>
       <span class="status" id="status" aria-live="polite"></span>
     </div>
 
@@ -26,6 +33,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="../apartments/apartments-data.js"></script>
   <script src="floorplan.js"></script>
 </body>
 </html>

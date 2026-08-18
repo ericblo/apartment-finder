@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Add Apartment</title>
+  <link rel="stylesheet" href="apartments.css">
+</head>
+<body>
+  <div class="app">
+    <a class="nav-link" href="apartments.html">&larr; Your apartments</a>
+
+    <h1 class="page-title">Add apartment</h1>
+
+    <form id="add-apartment-form">
+      <div class="form-field">
+        <label for="apartment-name">Apartment name</label>
+        <input type="text" id="apartment-name" name="name" placeholder="e.g. Beach house" required>
+      </div>
+
+      <div class="form-field">
+        <label for="apartment-address">Address (optional)</label>
+        <input type="text" id="apartment-address" name="address" placeholder="e.g. 123 Ocean Ave">
+      </div>
+
+      <div class="form-field">
+        <label for="apartment-rooms">Number of rooms</label>
+        <input type="number" id="apartment-rooms" name="rooms" min="0" step="1" placeholder="e.g. 4">
+      </div>
+
+      <button type="submit" class="save-button" id="save-button">Add apartment</button>
+      <p class="form-status" id="status" aria-live="polite"></p>
+    </form>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="apartments-data.js"></script>
+  <script src="add-apartment.js"></script>
+</body>
+</html>

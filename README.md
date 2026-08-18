@@ -36,7 +36,7 @@ The script will:
 
 ## Floor Plan Editor
 
-`src/floorplan/` holds the apartment's floor plan as room rectangles (`rect_rooms.json`, in meters) plus a small editor for editing them.
+`src/floorplan/` is a per-apartment floor plan editor — reached by clicking an apartment on the apartments list (`src/apartments/apartments.html`), which opens `floorplan.html?apartment=<id>`. Each apartment has its own set of room rectangles.
 
 Rooms are always axis-aligned — stored as `{ min: [x, y], max: [x, y] }`, never an arbitrary rotation or 4 free-form points. This is enforced automatically wherever rooms are created, both by the extraction pipeline and by every edit in the browser editor.
 
@@ -44,22 +44,33 @@ Rooms are always axis-aligned — stored as `{ min: [x, y], max: [x, y] }`, neve
 npm run floorplan
 ```
 
-Then open http://localhost:4173/. Click "Enable editing" to:
+Then open http://localhost:4173/src/apartments/apartments.html and click an apartment. Click "Enable editing" to:
 - **Drag inside a room** to move the whole rectangle (translation only, edges stay axis-aligned).
 - **Drag a corner or edge handle** to resize that room (adjusts one or two coordinates directly — never a rotation).
 - **Click a label** to rename a room.
+- **"Delete apartment"** (top of the page) removes the apartment from the list and its floor plan data, and goes back to the apartments list. This can't be undone.
 
-Each edit saves automatically to `src/floorplan/rect_rooms.json` via a small local Node server (`src/floorplan/server.js`) when running locally.
+A brand new apartment (added via "+" on the list, no floor plan yet) opens with a single starter room you can resize/rename — there's currently no "add another room" button, so more rooms have to come from the LiDAR pipeline below or manual data edits.
 
-This server also serves the item finder (`index.html`) from the same origin, so `npm run floorplan` is the easiest way to run the whole app locally — both pages link to each other ("Edit floor plan" / "Item Finder").
+Each edit saves automatically, keyed by apartment id, to `src/floorplan/apartment_floorplans.json` via a small local Node server (`src/floorplan/server.js`) when running locally.
+
+This server also serves the item finder (`index.html`) and the apartments list from the same origin, so `npm run floorplan` is the easiest way to run the whole app locally — all pages link to each other.
 
 ### Saving from the live GitHub Pages site
 
-GitHub Pages is static hosting — it can't run `server.js`, so the deployed editor at https://ericblo.github.io/apartment-finder/src/floorplan/floorplan.html saves a different way: it commits `rect_rooms.json` directly to the repo via the GitHub Contents API, using a Personal Access Token you provide.
+GitHub Pages is static hosting — it can't run `server.js`, so the deployed editor saves straight to Supabase instead, using a public row per apartment (keyed by `apartment_id`) in the `floorplan_state` table — same mechanism as the apartments list's `apartments_state` table below.
 
-On first visit to the non-local page, a token panel appears above the floor plan. Paste in a token and click "Save token" — it's stored only in that browser's `localStorage`, never in the deployed source. Use a **fine-grained token scoped to just this repo** with "Contents: Read and write" permission (not a broad classic token), and revoke it from GitHub's token settings whenever you want to cut off access. Each save while editing there becomes a real commit on `main`, which also triggers a Pages rebuild — so the live page reflects your latest edit within a minute or two.
+**One-time setup:** `floorplan_state` currently has a single fixed row (`id = 1`, the pre-existing data for "Mateo & Eric's place") from before floor plans were per-apartment. Migrate it to be keyed by `apartment_id` by running this once in the Supabase project's SQL editor:
 
-Locally (`npm run floorplan`), none of this applies — saves go through `server.js` as before and the token panel stays hidden.
+```sql
+alter table floorplan_state add column apartment_id text unique;
+update floorplan_state set apartment_id = 'b6f5a3a0-1d2e-4c5a-8b1a-5f7e6c9d0a11' where id = 1;
+alter table floorplan_state alter column apartment_id set not null;
+```
+
+(That id is "Mateo & Eric's place" from `src/apartments/apartments.json` — check it still matches before running this if the seed data has changed.) Existing row-level security policies should already permit the anon key to read/write; no changes needed there.
+
+Locally (`npm run floorplan`), none of this applies — saves go through `server.js` and `apartment_floorplans.json` instead.
 
 **"Clean up layout"** is a separate, manual, on-demand button (never runs automatically) that does two things in sequence:
 1. Rotates the whole layout so the largest room's longest edge is vertical.
@@ -71,6 +82,28 @@ Known limitation, not auto-fixed: rooms connected by an open doorway in the raw 
 
 `src/floorplan/floorplan_data.json` (the old polygon-based floor plan) is no longer read by the app — kept only as a reference/backup.
 
+## Apartments
+
+`src/apartments/` lists every apartment you've added and lets you add a new one (`apartments.html` / `add-apartment.html`). It follows the exact same local-server-vs-Supabase pattern as the floor plan editor above, just with its own table (`apartments_state`) and its own single JSON row. Locally it reads/writes `src/apartments/apartments.json`; on static hosting it upserts to Supabase via the same public row convention as `floorplan_state`.
+
+**One-time setup:** the `apartments_state` table doesn't exist in the Supabase project yet, so saves from the deployed (non-local) site will fail until it's created. Run this once in the Supabase project's SQL editor:
+
+```sql
+create table apartments_state (
+  id bigint primary key,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table apartments_state enable row level security;
+
+create policy "public read" on apartments_state for select using (true);
+create policy "public upsert" on apartments_state for insert with check (true);
+create policy "public update" on apartments_state for update using (true);
+```
+
+Locally (`npm run floorplan`), none of this is needed — saves go through `server.js` and `apartments.json` instead.
+
 ### Regenerating the floor plan from the LiDAR scan
 
 `pipeline/extract_rect_rooms.py` derives `rect_rooms.json` (plus `wall_raster.png` and `raster_params.npy`, also in `src/floorplan/`) from `scan.glb`:
@@ -80,4 +113,6 @@ pip install -r pipeline/requirements.txt
 python3 pipeline/extract_rect_rooms.py
 ```
 
-It projects the mesh onto the floor plane within a wall-height band, finds the building envelope, and fits a rectangle (`cv2.minAreaRect`) to each enclosed free-space blob — then rotates the whole layout so the largest room's longest edge is vertical and takes each room's axis-aligned bounding box in that frame (the same "rotate to vertical" logic as the editor's cleanup button, applied once at extraction time since axis-alignment is mandatory for the stored data). This favors "a reasonable rectangle per room" over pixel-perfect walls — re-running it overwrites any manual edits made in the browser editor, so re-extract before you start editing, not after.
+It projects the mesh onto the floor plane within a wall-height band, finds the building envelope, and fits a rectangle (`cv2.minAreaRect`) to each enclosed free-space blob — then rotates the whole layout so the largest room's longest edge is vertical and takes each room's axis-aligned bounding box in that frame (the same "rotate to vertical" logic as the editor's cleanup button, applied once at extraction time since axis-alignment is mandatory for the stored data). This favors "a reasonable rectangle per room" over pixel-perfect walls.
+
+The pipeline only knows about `scan.glb` for the one apartment that's been scanned — it writes its result to `src/floorplan/rect_rooms.json`, not into the per-apartment `apartment_floorplans.json` the app actually reads. After re-running the pipeline, copy `rect_rooms.json`'s contents into `apartment_floorplans.json` under that apartment's id by hand if you want the app to pick up the re-extraction — this overwrites any manual edits made in the browser editor for that apartment, so re-extract before you start editing, not after.

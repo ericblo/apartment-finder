@@ -1,0 +1,18 @@
+{
+  "apartments": [
+    {
+      "id": "b6f5a3a0-1d2e-4c5a-8b1a-5f7e6c9d0a11",
+      "name": "Mateo & Eric's place",
+      "address": "",
+      "rooms": 7,
+      "updatedAt": "2026-08-17T18:00:00.000Z"
+    },
+    {
+      "id": "57c2d757-dcd9-42c7-9f34-e28205ad6dc2",
+      "name": "lukes apt",
+      "address": "",
+      "rooms": null,
+      "updatedAt": "2026-08-18T04:41:53.070Z"
+    }
+  ]
+}

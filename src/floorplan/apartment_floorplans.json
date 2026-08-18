@@ -1,0 +1,86 @@
+{
+  "b6f5a3a0-1d2e-4c5a-8b1a-5f7e6c9d0a11": {
+    "coordinate_frame": {
+      "unit": "meters",
+      "note": "Rotated so the largest room's longest edge is vertical; not tied to compass orientation. Rooms are axis-aligned rectangles (min, max corners) -- always, never an arbitrary rotation. Rectangles are approximate (furniture and open doorways can shrink/merge blobs) -- fix up by hand in the floor plan editor."
+    },
+    "rooms": [
+      {
+        "id": "room_1",
+        "name": "Room 1",
+        "min": [
+          -4.016835595357816,
+          -7.546070506001158
+        ],
+        "max": [
+          3.454271274716579,
+          5.665525724105184
+        ]
+      },
+      {
+        "id": "room_2",
+        "name": "Room 2",
+        "min": [
+          0.8167102938655955,
+          5.665525724105184
+        ],
+        "max": [
+          3.454271274716579,
+          10.063568921558042
+        ]
+      },
+      {
+        "id": "room_3",
+        "name": "Room 3",
+        "min": [
+          0.5641,
+          -11.7924
+        ],
+        "max": [
+          3.454271274716579,
+          -7.546070506001158
+        ]
+      },
+      {
+        "id": "room_4",
+        "name": "Mateo",
+        "min": [
+          -4.016835595357816,
+          5.665525724105184
+        ],
+        "max": [
+          -0.7764776857544611,
+          10.163546719996052
+        ]
+      }
+    ]
+  },
+  "57c2d757-dcd9-42c7-9f34-e28205ad6dc2": {
+    "rooms": [
+      {
+        "id": "room_1",
+        "name": "New Room",
+        "min": [
+          3.421572602908629,
+          -4.636250810671802
+        ],
+        "max": [
+          8.443235489410174,
+          0.3723783474640251
+        ]
+      },
+      {
+        "id": "room_2",
+        "name": "Room 2",
+        "min": [
+          8.443235489410174,
+          -4.636250810671802
+        ],
+        "max": [
+          11.46489837591172,
+          -1.5821685125126894
+        ]
+      }
+    ]
+  }
+}

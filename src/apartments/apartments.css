@@ -1,0 +1,224 @@
+:root {
+  --text: #222;
+  --muted: #6b6b6b;
+  --accent: #ff7a45;
+  --accent-glow: rgba(255, 122, 69, 0.35);
+  --wall: #2b2b2b;
+  --bg: #eef0f2;
+  --panel: #fff;
+  --border: #ddd;
+  --radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--text);
+  display: flex;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+.app {
+  width: 100%;
+  max-width: 640px;
+}
+
+.nav-link {
+  display: inline-block;
+  margin-bottom: 16px;
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.nav-link:hover {
+  text-decoration: underline;
+}
+
+.page-title {
+  margin: 0 0 20px;
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  gap: 16px;
+}
+
+.list-header h1 {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.add-button {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 1.3rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.05s ease;
+}
+
+.add-button:hover {
+  background: #f7f7f7;
+}
+
+.add-button:active {
+  transform: scale(0.94);
+}
+
+.apartment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.apartment-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: inherit;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.apartment-card:hover {
+  background: #fafafa;
+  border-color: #ccc;
+}
+
+.apartment-chevron {
+  flex-shrink: 0;
+  color: #bbb;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.apartment-icon {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+}
+
+.apartment-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.apartment-name {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.apartment-meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--muted);
+  padding: 40px 20px;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.form-field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #444;
+}
+
+.form-field input {
+  padding: 14px 16px;
+  font-size: 15px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.save-button {
+  width: 100%;
+  padding: 16px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--wall);
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.05s ease;
+}
+
+.save-button:hover {
+  background: #444;
+}
+
+.save-button:active {
+  transform: scale(0.98);
+}
+
+.save-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.form-status {
+  min-height: 20px;
+  margin-top: 12px;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.form-status.error {
+  color: #b91c1c;
+}
