@@ -140,6 +140,12 @@ function render() {
   svg.setAttribute("width", transform.width);
   svg.setAttribute("height", transform.height);
 
+  // CSS width: fit-content on .canvas-wrap is unreliable here (it depends on
+  // the SVG's percentage-based max-width, a known fragile combination) --
+  // set the card's width explicitly from the plan's real pixel size instead.
+  const CANVAS_PADDING = 32; // .canvas-wrap's 16px padding, both sides
+  canvasWrap.style.width = `${transform.width + CANVAS_PADDING}px`;
+
   floorplanData.rooms.forEach((room, roomIndex) => {
     let fillClass = editing ? "room-fill movable" : "room-fill";
     if (editing && roomIndex === selectedRoomIndex) fillClass += " selected";
